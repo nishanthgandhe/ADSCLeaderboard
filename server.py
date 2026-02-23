@@ -1,11 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List
 import json
 import os
 import time
+import secrets
 
 app = FastAPI(title="ADSC CNN Leaderboard API")
+ADMIN_RESET_TOKEN = os.getenv("ADMIN_RESET_TOKEN", "")
 
 LEADERBOARD_PATH = "leaderboard.json"
 BOARD: Dict[str, Dict[str, Any]] = {}
@@ -101,3 +103,33 @@ def submit(payload: SubmitPayload):
         "your_best": float(existing["best_test_acc"]),
         "leaderboard": public_entries(),
     }
+
+@app.post("/admin/reset")
+def admin_reset(x_admin_token: str = Header(default="")):
+    """
+    Deletes all leaderboard entries.
+    Requires header: X-Admin-Token: <ADMIN_RESET_TOKEN>
+    """
+    if not ADMIN_RESET_TOKEN:
+        return {"ok": False, "error": "Server admin token not configured."}
+
+    if not x_admin_token or not secrets.compare_digest(x_admin_token, ADMIN_RESET_TOKEN):
+        return {"ok": False, "error": "Unauthorized."}
+
+    BOARD.clear()
+    save_board()
+    return {"ok": True, "message": "Leaderboard reset ✅", "leaderboard": []}
+
+
+@app.get("/admin/status")
+def admin_status(x_admin_token: str = Header(default="")):
+    """
+    Small sanity check to confirm your token works.
+    """
+    if not ADMIN_RESET_TOKEN:
+        return {"ok": False, "error": "Server admin token not configured."}
+
+    if not x_admin_token or not secrets.compare_digest(x_admin_token, ADMIN_RESET_TOKEN):
+        return {"ok": False, "error": "Unauthorized."}
+
+    return {"ok": True, "teams": len(BOARD)}
